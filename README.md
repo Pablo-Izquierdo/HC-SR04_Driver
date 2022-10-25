@@ -1,5 +1,7 @@
 # HC-SR04_Driver
 
+Everything is in assembly code for a raspberry with a HC-SR04 sensor
+
 ## Version 1
 ### d_distancia1
 
