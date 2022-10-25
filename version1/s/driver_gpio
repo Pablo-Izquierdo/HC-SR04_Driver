@@ -1,0 +1,257 @@
+.data
+.align 4
+direccion_base: .word 0x20200000
+direccion_logica: .space 4
+.equ offsetgpfsel, 0x0
+.equ offsetgpset, 0x1C
+.equ offsetgpclr, 0x28
+.equ offsetgplev, 0x34
+.equ offsetgpren, 0x4C
+.equ offsetgpfen, 0x58
+.equ offsetgpeds, 0x40
+
+.text
+.globl prog_gpio
+.globl valor_gpio
+.globl leevalor_gpio
+.globl progEv_gpio
+.globl leeEv_gpio
+.globl clearEv_gpio
+
+.extern div_10
+
+prog_gpio:
+
+STMDB SP!, {R4-R7,LR}
+
+MOV R4,R0  @PIN
+MOV R5,R1  @IN/OUT
+
+MOV R0,#13
+LDR R2, =direccion_base
+LDR R1, [R2]
+MOV R2,#0X100
+
+SWI 0X68
+
+LDR R2,=direccion_logica
+STR R3,[R2]
+MOV R6,R3                   @guardo en r6 la dir
+
+MOV R0,R4
+BL div_10
+
+MOV R12,#4
+MUL R0,R12,R0   @Obtengo el gpfsel que quiero
+MOV R12,#3
+MUL R1,R12,R1   @Obtengo e desplazamiento del bit al que quiero acceder
+ADD R6,R6,#offsetgpfsel
+ADD R6,R6,R0            @sumo el desplazamiento necesario y tengo la dir buscada
+
+
+MOV R2,#7       @Mascara para borrar
+LSL R2,R2,R1    @Desplazo la mascara
+LSL R5,R5,R1    @Desplazo el 1 o 0 que me han dado como parametro
+                @Uso r5 como mascara para programar
+SWI 0X16
+
+LDR R7,[R6]
+BIC R7,R7,R2            @Borro los 3 bits del pin
+ORR R7,R7,R5            @Cambio la funcion del pin a la que pe pinden
+STR R7,[R6]             @Actualizo el valor del gpfsel
+
+SWI 0X7C
+
+MOV R0,R7
+
+LDMIA SP!,{R4-R7,PC}
+
+
+
+
+
+
+
+valor_gpio:
+
+STMDB SP!, {R4-R7,LR}
+
+MOV R4,R0     @Pin
+MOV R5,R1     @Cambio
+
+
+LDR R2,=direccion_logica
+LDR R6,[R2]                   @Cargo la direccion logica en r6
+
+
+CMP R5,#1           @Dependiendo de lo que me pidan voy a un registro o otro
+    ADDEQ R6,R6,#offsetgpset
+    ADDNE R6,R6,#offsetgpclr
+
+CMP R4,#31          @Si el pin esta en el segundo registro sumo 4 a la dir
+BLE FINIFVG
+    ADD R6,R6,#4
+    SUB R4,R4,#32   @Resto al pin 32 para asi obtener el desplazamineto del pin
+FINIFVG:
+
+MOV R1,#1       @Mascara
+LSL R1,R1,R4    @Desplazo para obtener la mascara
+
+SWI 0X16
+
+@LDR R7,[R6]     @Cargo en r7 gpset
+@ORR R7,R7,R1    @Pongo a 1 el bit del pin correspondiente
+STR R1,[R6]     @Actualizo el gp correspondiente
+
+SWI 0X7C
+
+LDMIA SP!, {R4-R7,PC}
+
+
+
+
+leevalor_gpio:
+
+STMDB SP!, {R4-R7, LR}
+
+MOV R4,R0    @Pin
+
+LDR R2,=direccion_logica     @Cargo la direccion logica
+LDR R6,[R2]
+
+ADD R6,R6,#offsetgplev
+
+CMP R4,#31            @Compruebo si es gplev0 o gplev1
+    ADDGT R6,R6,#4
+    SUBGT R4,R4,#32
+
+SWI 0X16    @En modo supervisor cargo en r5 el contenido de la memoria y salgo
+
+LDR R5,[R6]
+
+SWI 0X7C
+
+MOV R7,#1      @Creo una marcara para leer el valor
+LSL R7,R7,R4
+AND R5,R5,R7
+
+CMP R5,#0       @Dependiendo de si es igual a cero o no pues devuelvo un valor
+    MOVEQ R0,#0
+    MOVNE R0,#1
+
+LDMIA SP!, {R4-R7, PC}
+
+
+
+progEv_gpio:
+
+STMDB SP!, {R4-R7,LR}
+
+MOV R4,R0
+MOV R5,R1    @Ascendente/Descendente
+
+LDR R2, =direccion_logica
+LDR R6,[R2]
+
+CMP R5,#0   @Compuebo a que Gp necesito ir y sumo el offset
+BNE ELSEPEV
+    ADD R6,R6,#offsetgpren
+    B CONTINUA
+ELSEPEV:
+    ADD R6,R6,#offsetgpfen
+CONTINUA:
+CMP R4,#31    @Compruebo si es el Gp1
+BLE FINIFPEV
+    ADD R6,R6,#4
+    SUB R4,R4,#32
+
+FINIFPEV:
+
+MOV R7,#1   @Creo la mascara
+LSL R7,R7,R4
+
+SWI 0X16
+
+LDR R0,[R6]    @Cargo en r0 el gp correspondiente
+ORR R0,R0,R7   @Cambio el valor a 1
+STR R0,[R6]    @actualizo el registro en memoria
+
+SWI 0X7C
+
+LDMIA SP!, {R4-R7,PC}
+
+
+
+leeEv_gpio:
+
+STMDB SP!, {R4,R6,R7,LR}
+
+MOV R4,R0
+
+LDR R2, =direccion_logica
+LDR R6,[R2]
+
+ADD R6,R6,#offsetgpeds @Sumo el offset a la direccion
+
+
+CMP R4,#31    @Compruebo si es el Gp1
+BLE FINIFLEV
+    ADD R6,R6,#4
+    SUB R4,R4,#32
+
+FINIFLEV:
+
+MOV R7,#1       @Creo la mascara que usare para leer el valor
+LSL R7,R7,R4    @Desplazo la mascara pin veces
+
+SWI 0X16
+
+LDR R0,[R6]   @Cargo en r0 el gpeds correspondiente
+
+SWI 0X7C
+
+AND R0,R0,R7   @Si es un 0 r0 = 0, sino es otro umero cualquiera
+
+CMP R0,#0      @Si es igual a 0 devuelvo 0 si no devuelvo 1
+BEQ FINLEV
+    MOV R0,#1
+
+FINLEV:
+LDMIA SP!, {R4,R6,R7,PC}
+
+
+
+clearEv_gpio:
+
+STMDB SP!, {R4,R6,R7,LR}
+
+MOV R4,R0
+
+LDR R2, =direccion_logica    @cojo la direccion logica de memoria
+LDR R6,[R2]
+
+ADD R6,R6,#offsetgpeds    @Sumo el offset a la direccion
+
+
+CMP R4,#31         @Compruebo si es el Gp1
+BLE FINIFCEV
+    ADD R6,R6,#4
+    SUB R4,R4,#32
+
+FINIFCEV:
+
+MOV R7,#1        @Creo la mascara
+LSL R7,R7,R4
+
+SWI 0X16
+
+@LDR R0,[R6]    @cargo en r0 el gpeds correspondiente
+@BIC R0,R0,R7   @Borro el bit del pin
+STR R7,[R6]     @Guardo la mascara
+
+SWI 0X7C
+
+
+LDMIA SP!, {R4,R6,R7,PC}
+
+

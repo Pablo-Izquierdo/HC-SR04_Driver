@@ -1,0 +1,52 @@
+.data
+.align 2
+DIRECCION_BASE: .word 0X20003000
+DIRECCION_LOGICA: .space 4
+
+.equ CLO, 0X04
+.equ CHI, 0x08
+
+.text
+.globl ini_Timer
+.globl Timer_act
+
+ini_Timer:
+
+STMDB SP!, {LR}
+
+
+MOV R0,#13
+LDR R1, =DIRECCION_BASE
+LDR R1,[R1]
+MOV R2,#0xE8
+SWI 0x68
+
+LDR R0, =DIRECCION_LOGICA
+STR R3,[R0]
+
+LDMIA SP!, {PC}
+
+
+Timer_act:
+
+STMDB SP!, {LR}
+
+LDR R1,=DIRECCION_LOGICA
+LDR R1,[R1]
+
+ADD R1,R1,#CLO
+
+MRS R0,CPSR
+AND R0,R0,#0x1F
+CMP R0,#0x10
+
+SWIEQ 0x16
+
+LDR R0,[R1]
+ADD R1,R1,#4
+LDR R1,[R1]
+
+SWIEQ 0x7C
+
+LDMIA SP!, {PC}
+

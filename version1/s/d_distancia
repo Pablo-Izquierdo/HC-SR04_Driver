@@ -1,0 +1,110 @@
+.data
+.align 2
+MULTI: .hword 0x2BEE
+
+
+.text
+.extern driver_gpio
+.extern d_timer
+.globl ini_dist
+.globl mide_dist
+
+
+ini_dist:
+STMDB SP!, {LR}
+
+MOV R0,#2
+MOV R1,#1
+BL prog_gpio
+
+MOV R0,#3
+MOV R1,#0
+BL prog_gpio
+
+LDMIA SP!, {PC}
+
+mide_dist:
+
+STMDB SP!, {R4-R7,LR}
+
+MOV R7,#0 @ERROR FALSE
+
+BL ini_Timer  @inicio el timer
+
+MOV R0,#2   @doy valor 1 al triger
+MOV R1,#1
+BL valor_gpio
+
+@bucle con el timer
+
+BL Timer_act
+ADD R6,R0,#17 @Sumo al trig 17 para esperar 17 micros
+BUCLEMD:
+BL Timer_act  @Compruebo si el timer ha llegado a ese tiempo
+CMP R0,R6
+BLT BUCLEMD
+
+MOV R6,#0x18000
+ORR R6,R6,#0x6A0
+
+MOV R0,#2   @Doy valor 0 al triger
+MOV R1,#0
+BL valor_gpio
+
+WHILEMD1:     @Compruebo si se a puesto a 1 el echo encuenta continua
+CMP R6,#0
+BEQ ERRORMD
+MOV R0,#3
+BL leevalor_gpio
+CMP R0,#1
+SUB R6,R6,#1
+BNE WHILEMD1
+
+BL Timer_act    @Cojo valor de timer
+MOV R4,R0
+MOV R5,R1
+
+WHILEMD2:    @ Espero a que se ponga a 0 el echo
+MOV R0,#3
+BL leevalor_gpio
+CMP R0,#0
+BNE WHILEMD2
+
+
+BL Timer_act  @cojo el valor del timer
+@MOV R6,R0
+@MOV R7,R1
+
+SUB R4,R0,R4   @ calculo la distancia restando, multiplicando y dividiendo
+SUB R5,R1,R5
+LDR R12,=MULTI
+LDRH R12,[R12]
+MUL R4,R12,R4
+LSR R4,R4,#16  @Solucion en r4
+
+B FIN
+
+
+ERRORMD:
+MOV R7,#1   @Pongo en r8 un 1 para detectar el error
+
+FIN:
+
+@bucle con el timer para esperar antes de otra muestra
+
+BL Timer_act
+ADD R6,R0,#10 @Sumo al trig 10 para esperar 10 micros
+BFINMD:
+BL Timer_act  @Compruebo si el timer ha llegado a ese tiempo
+CMP R0,R6
+BLT BFINMD
+
+CMP R7,#1
+MOVEQ R0,#0  @ pongo la distancia a 0 y en r1 = 1 por ser un error
+MOVNE R0,R4  @devuelvo la distancia y 0 si no ha habido problemas
+MOV R1,R7
+
+LDMIA SP!, {R4-R7,PC}
+
+
+

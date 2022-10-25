@@ -1,0 +1,168 @@
+.data
+.align 2
+MULTI: .hword 0x2BEE
+.align 2
+DIR_CONTROLADOR: .word  0x2000B200
+Timer2: .space 4
+
+.equ EN_IQR2, 0x14
+.equ DIS_IQR2, 0x20
+
+.text
+.extern driver_gpio2
+.extern d_timer2
+.globl ini_dist
+.globl mide_dist
+
+
+ini_dist:
+STMDB SP!, {LR}
+
+MOV R0,#3
+MOV R1,#0
+BL prog_gpio
+
+MOV R0,#2
+MOV R1,#1
+BL prog_gpio
+
+LDMIA SP!, {PC}
+
+mide_dist:
+
+STMDB SP!, {R4-R7,LR}
+@Programo los eventos descendentes
+MOV R0,#3
+MOV R1,#1
+BL progEv_gpio
+
+MOV R1,#0        @Inicio el space a 0
+LDR R0,=Timer2
+STR R1,[R0]
+
+@Activacion de gestio
+MOV R0,#51           @GPIO 2
+MOV R1,#rutina_ate   @NOMBRE DE MI RUTINA
+MOV R2,#0
+MOV R3,#0
+MOV R4,#0
+SWI 0x4B
+
+@Quitar mascara de interrupcion
+LDR R0,=DIR_CONTROLADOR
+LDR R0,[R0]
+MOV R1,#0x80000
+SWI 0x16
+STR R1,[R0,#EN_IQR2]
+SWI 0x7C
+
+MOV R7,#0 @ERROR FALSE
+
+BL ini_Timer  @inicio el timer
+
+MOV R0,#2   @doy valor 1 al triger
+MOV R1,#1
+BL valor_gpio
+
+@bucle con el timer
+
+BL Timer_act
+ADD R6,R0,#17 @Sumo al trig 17 para esperar 17 micros
+BUCLEMD:
+BL Timer_act  @Compruebo si el timer ha llegado a ese tiempo
+CMP R0,R6
+BLT BUCLEMD
+
+MOV R6,#0x18000
+ORR R6,R6,#0x6A0
+
+MOV R0,#2   @Doy valor 0 al triger
+MOV R1,#0
+BL valor_gpio
+
+WHILEMD1:     @Compruebo si se a puesto a 1 el echo encuenta continua
+CMP R6,#0
+BEQ ERRORMD
+MOV R0,#3
+BL leevalor_gpio
+CMP R0,#1
+SUB R6,R6,#1
+BNE WHILEMD1
+
+BL Timer_act    @Cojo valor de timer
+MOV R4,R0
+
+LDR R0,=Timer2   @Voy mirando el valor del space
+MOV R5,#2
+WHILEMD2:    @ Espero a que salte la interrupcion
+LDR R1,[R0]
+CMP R1,#0
+ADD R5,R5,#4
+BEQ WHILEMD2
+
+LDR R6,=Timer2
+LDR R6,[R6]
+SUB R4,R6,R4   @ calculo la distancia restando, multiplicandoy dividiendo
+LDR R12,=MULTI
+LDRH R12,[R12]
+MUL R4,R12,R4
+LSR R6,R4,#16 @Muevo la solucion a r6 para evitar problemas
+
+
+B FIN
+
+
+ERRORMD:
+MOV R7,#1   @ pongo la distancia a 0 y en r1 = 0 por ser un error
+
+
+FIN:
+
+@Desactivacion de gestion
+MOV R0,#51
+MOV R1,#rutina_ate
+MOV R2,#0
+MOV R3,#0
+MOV R4,#0
+SWI 0x4C
+
+@Ponemos mascara
+LDR R0,=DIR_CONTROLADOR
+LDR R0,[R0]
+MOV R1,#0x80000
+SWI 0x16
+STR R1,[R0,#DIS_IQR2]
+SWI 0x7C
+
+
+@bucle con el timer para esperar antes de otra muestra
+
+BL Timer_act
+ADD R4,R0,#10 @Sumo al trig 10 para esperar 10 micros
+BFINMD:
+BL Timer_act  @Compruebo si el timer ha llegado a ese tiempo
+CMP R0,R4
+BLT BFINMD
+
+CMP R7,#1  @Si hay error r1 = 1
+MOVEQ R0,#0
+MOVNE R0,R6  @Distancia
+MOV R1,R7  @Error
+MOV R2,R5 @Numero de operaciones interrupcion
+
+LDMIA SP!, {R4-R7,PC}
+
+
+rutina_ate:
+
+STMDB SP!, {R0-R7,LR}
+
+BL Timer_act
+
+LDR R1,=Timer2
+STR R0,[R1]
+
+MOV R0,#3	@Limpio el evento para que no vuelva a saltar la interrupcion
+BL clearEv_gpio
+
+LDMIA SP!,{R0-R7,PC}
